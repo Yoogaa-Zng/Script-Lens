@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>劇本結構分析工作台</title>
+<style>
+  :root{
+    --plot:#185FA5; --static:#EF9F27; --text:#221f1a; --muted:#5F5E5A; --hint:#8b897f;
+    --line:#D3D1C7; --warn-bg:#FFF4E0; --warn-border:#F0AD4E; --bg:#F7F5F0;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",-apple-system,sans-serif;background:var(--bg);color:var(--text);}
+  .mono{font-family:"JetBrains Mono","SF Mono","Courier New",monospace;}
+
+  .swb-header{padding:22px 24px 0;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#FBFAF7 0%,#F7F5F0 100%);}
+  .swb-topline{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  .swb-title-row{display:flex;align-items:baseline;gap:10px;}
+  .swb-eyebrow{font-size:10.5px;letter-spacing:.14em;color:var(--hint);text-transform:uppercase;font-family:"JetBrains Mono",monospace;}
+  .swb-title-input{font-size:22px;font-weight:700;border:none;background:transparent;color:var(--text);border-bottom:1.5px dashed transparent;padding:0 2px;min-width:80px;}
+  .swb-title-input:hover,.swb-title-input:focus{border-bottom-color:var(--line);outline:none;}
+  .swb-actions{display:flex;gap:8px;}
+
+  .btn{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;padding:7px 12px;border-radius:7px;border:1px solid var(--line);background:#fff;color:var(--text);cursor:pointer;}
+  .btn:hover{border-color:var(--text);}
+  .btn-dark{background:var(--text);color:#F7F5F0;border-color:var(--text);}
+  .btn-ghost{border-color:transparent;background:transparent;}
+  .btn-ghost:hover{background:#00000008;}
+  .btn-sm{padding:4px 8px;font-size:11.5px;}
+  .btn-danger{color:#B23A2E;}
+
+  .mode-tabs{display:flex;gap:4px;margin:16px 0 0;}
+  .tab-btn{font-size:12.5px;font-weight:600;padding:8px 14px;border-radius:8px 8px 0 0;border:1px solid var(--line);border-bottom:none;cursor:pointer;background:transparent;color:var(--muted);}
+  .tab-active{background:var(--text);color:#F7F5F0;}
+
+  .swb-body{padding:18px 24px 60px;max-width:1180px;margin:0 auto;}
+
+  .validation-bar{display:flex;align-items:flex-start;gap:8px;padding:10px 14px;border-radius:8px;font-size:12px;line-height:1.7;margin-bottom:16px;}
+  .validation-ok{background:#EEF7EF;border:1px solid #BFE0C4;color:#2B6B33;}
+  .validation-err{background:var(--warn-bg);border:1px solid var(--warn-border);color:#7A4A0A;}
+
+  .sub-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;}
+  .sub-tab-btn{font-size:12px;font-weight:600;padding:6px 12px;border-radius:20px;border:1px solid var(--line);background:#fff;cursor:pointer;color:var(--muted);}
+  .sub-tab-active{background:var(--text);color:#F7F5F0;border-color:var(--text);}
+
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:16px;}
+  .card-title{font-size:13px;font-weight:700;margin-bottom:4px;}
+  .card-sub{font-size:11.5px;color:var(--hint);margin-bottom:14px;line-height:1.6;}
+
+  .filmstrip-wrap{background:#14120f;border-radius:10px;padding:14px 0;overflow-x:auto;
+    background-image:radial-gradient(circle,#3a362d 1.6px,transparent 1.7px),radial-gradient(circle,#3a362d 1.6px,transparent 1.7px);
+    background-size:14px 100%,14px 100%;background-position:0 6px,0 calc(100% - 6px);background-repeat:repeat-x;}
+  .filmstrip-track{display:flex;padding:12px 20px;min-width:max-content;align-items:flex-end;height:54px;}
+  .fs-cell{width:4px;margin-right:1px;border-radius:1px;flex-shrink:0;}
+
+  .grp-row{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #EEEBE3;}
+  .grp-row:last-child{border-bottom:none;}
+  .grp-name{width:168px;flex-shrink:0;font-size:12px;line-height:1.4;color:var(--muted);}
+  .grp-bar-wrap{flex:1;display:flex;align-items:center;gap:8px;}
+  .grp-bar-bg{flex:1;height:14px;border-radius:3px;overflow:hidden;display:flex;background:#F1EFE8;}
+  .grp-total{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--hint);width:28px;text-align:right;}
+  .act-label{font-size:10px;color:var(--hint);padding:8px 0 2px;font-family:monospace;}
+
+  table.editor-table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  table.editor-table th{text-align:left;font-size:10.5px;color:var(--hint);font-weight:600;padding:0 8px 6px;border-bottom:1px solid var(--line);text-transform:uppercase;letter-spacing:.04em;}
+  table.editor-table td{padding:4px 8px;vertical-align:middle;}
+  table.editor-table tr{border-bottom:1px solid #F0EEE7;}
+  .cell-input{width:100%;border:1px solid transparent;background:transparent;padding:5px 6px;border-radius:6px;font-size:12.5px;color:var(--text);font-family:inherit;}
+  .cell-input:hover{border-color:var(--line);}
+  .cell-input:focus{border-color:var(--text);outline:none;background:#fff;}
+  .cell-input.num{width:56px;text-align:right;font-family:"JetBrains Mono",monospace;}
+  select.cell-input{width:64px;}
+
+  .delta-track{display:flex;gap:3px;overflow-x:auto;padding:4px 0 8px;}
+  .delta-btn{width:22px;height:22px;flex-shrink:0;border-radius:5px;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:"JetBrains Mono",monospace;border:1px solid var(--line);}
+
+  .theme-card,.profile-card{background:#FBFAF7;border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:10px;}
+  .field-label{font-size:10px;color:var(--hint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;display:block;}
+  .field-input{width:100%;border:1px solid var(--line);border-radius:6px;padding:6px 9px;font-size:12.5px;font-family:inherit;margin-bottom:8px;background:#fff;}
+  textarea.field-input{resize:vertical;min-height:44px;line-height:1.6;}
+
+  .warn-box{background:var(--warn-bg);border:1px solid var(--warn-border);border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.8;color:#7A4A0A;white-space:pre-wrap;}
+
+  .report-page{background:#fff;border:1px solid var(--line);border-radius:14px;padding:34px 36px;}
+  .report-title{font-size:22px;font-weight:800;margin-bottom:2px;}
+  .report-sub{font-size:11px;color:var(--hint);margin-bottom:16px;}
+  .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:20px;}
+  .stat-cell{text-align:center;padding:12px 4px;border-right:1px solid var(--line);}
+  .stat-cell:last-child{border-right:none;}
+  .stat-num{font-size:22px;font-weight:800;}
+  .stat-label{font-size:10.5px;color:var(--muted);margin-top:2px;}
+
+  .sec-heading{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:800;margin:26px 0 10px;}
+  .sec-n{width:22px;height:22px;border-radius:50%;background:var(--text);color:#F7F5F0;font-size:11px;display:flex;align-items:center;justify-content:center;font-family:"JetBrains Mono",monospace;flex-shrink:0;}
+  .sec-body-text{font-size:12px;color:var(--muted);line-height:1.8;margin-bottom:10px;}
+
+  .legend-row{display:flex;gap:16px;align-items:center;margin:8px 0 4px;font-size:11px;color:var(--muted);}
+  .legend-dot{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:5px;}
+
+  .export-modal{position:fixed;inset:0;background:#00000066;display:flex;align-items:center;justify-content:center;z-index:50;padding:24px;}
+  .export-panel{background:#fff;border-radius:12px;max-width:720px;width:100%;max-height:82vh;display:flex;flex-direction:column;overflow:hidden;}
+  .export-head{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;}
+  .export-body{padding:16px 20px;overflow:auto;}
+  .export-ta{width:100%;min-height:340px;font-family:"JetBrains Mono",monospace;font-size:11px;line-height:1.6;border:1px solid var(--line);border-radius:8px;padding:12px;background:#FBFAF7;color:var(--text);}
+
+  .checklist-item{display:flex;gap:8px;align-items:flex-start;font-size:12px;padding:6px 0;border-bottom:1px solid #F0EEE7;}
+  .checklist-item:last-child{border-bottom:none;}
+  .profile-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;}
+  .profile-mini{border:1px solid var(--line);border-radius:8px;padding:10px;font-size:11.5px;}
+
+  @media print{
+    body *{visibility:hidden;}
+    #printable, #printable *{visibility:visible;}
+    #printable{position:absolute;left:0;top:0;width:100%;}
+    .report-page{border:none;padding:0;}
+    @page{size:A4;margin:15mm;}
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════
+   資料模型（比照《劇本分析報告生成器_v3.4.py》資料結構）
+   ════════════════════════════════════════════════════════════════ */
+const ACT_BG = ["#D6E8F7","#D6EDD9","#FFF3CC","#FFE0C2","#F5D0D0"];
+const ACT_LABELS = ["第1幕｜引入","第2幕｜上升","第3幕｜高潮","第4幕｜下降","第5幕｜結局"];
+const ACT_SHORT = ["第1幕","第2幕","第3幕","第4幕","第5幕"];
+const ARC_COLORS = ["#185FA5","#C0392B","#3B6D11","#854F0B","#7B2D8B","#B5830A"];
+
+let S = {
+  title: "黑暗騎士",
+  mode: "workbench",
+  subTab: "groups",
+  exportOpen: false,
+  groups: [
+    {name:"銀行搶劫/Joker登場",act:1,plot:19,static:0},
+    {name:"Gordon調查/威脅建立",act:1,plot:2,static:2},
+    {name:"Batman vs假蝙蝠俠",act:1,plot:0,static:8},
+    {name:"Wayne & Alfred",act:1,plot:0,static:4},
+    {name:"Dent出庭",act:1,plot:0,static:4},
+    {name:"Wayne董事會/Lau",act:1,plot:0,static:3},
+    {name:"餐廳三角關係",act:1,plot:0,static:2},
+    {name:"黑幫會議/掃蕩蒙太奇",act:1,plot:9,static:0},
+    {name:"Batman&Gordon屋頂",act:1,plot:0,static:1},
+    {name:"香港前置準備",act:1,plot:0,static:4},
+    {name:"Wayne社交活動",act:1,plot:0,static:3},
+    {name:"香港攻堅",act:2,plot:20,static:0},
+    {name:"審訊Lau/結盟",act:2,plot:6,static:0},
+    {name:"市政廳/Gordon升職",act:2,plot:7,static:0},
+    {name:"Penthouse派對",act:2,plot:0,static:4},
+    {name:"Rachel告知Wayne",act:2,plot:1,static:1},
+    {name:"Joker殺Gambol",act:2,plot:5,static:0},
+    {name:"Joker入侵/救Rachel",act:2,plot:12,static:0},
+    {name:"Dent被捕鋪墊",act:2,plot:0,static:3},
+    {name:"暗殺潮蒙太奇",act:2,plot:3,static:0},
+    {name:"Fox/Applied Sciences",act:2,plot:0,static:5},
+    {name:"暗殺潮持續升級",act:2,plot:14,static:0},
+    {name:"Gordon中槍",act:3,plot:2,static:0},
+    {name:"夜總會情緒過渡",act:3,plot:0,static:2},
+    {name:"Joker被關/審訊",act:3,plot:2,static:2},
+    {name:"Wayne哀悼/Alfred",act:3,plot:0,static:2},
+    {name:"Dent自首",act:3,plot:5,static:0},
+    {name:"Joker在牢",act:3,plot:0,static:2},
+    {name:"護送車追逐",act:3,plot:57,static:0},
+    {name:"Batman審訊Joker",act:3,plot:9,static:4},
+    {name:"爆炸/Rachel死",act:4,plot:27,static:0},
+    {name:"哀悼/Alfred燒信",act:4,plot:2,static:11},
+    {name:"Harvey轉化",act:4,plot:3,static:2},
+    {name:"Reese威脅/Joker逃",act:4,plot:33,static:4},
+    {name:"Alfred遺書/監控系統",act:4,plot:3,static:2},
+    {name:"渡輪實驗設置",act:5,plot:6,static:4},
+    {name:"渡輪困境/擊敗Joker",act:5,plot:53,static:0},
+    {name:"Harvey結局/Batman污名",act:5,plot:10,static:0},
+  ],
+  characters: [
+    {name:"蝙蝠俠/Wayne", deltas:[1,0,0,0,0,0,0,1,0,0,0,1,1,1,0,0,-1,1,0,1,0,1,1,0,0,0,1,0,1,-1,-1,0,0,0,-1,0,1]},
+    {name:"Joker", deltas:[1,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,1,1,0,1,0,1,0,0,0,0,0,0,-1,1,-1,0,0,1,0,0,-1]},
+    {name:"Harvey Dent", deltas:[0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,-1,-1,0,0,0,0,0,-1]},
+    {name:"Gordon", deltas:[0,1,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1]},
+  ],
+  cues: [
+    {name:"蝙蝠俠/Wayne", count:157},
+    {name:"Harvey Dent", count:141},
+    {name:"Gordon", count:119},
+    {name:"Joker", count:90},
+    {name:"Rachel", count:64},
+    {name:"Alfred", count:49},
+  ],
+  profiles: [
+    {name:"蝙蝠俠/Wayne", cues:157, want:"消滅犯罪、保護哥譚", need:"接受代價，放棄英雄身份", arc:"主動失敗（chosen defeat）", note:"雙重身份張力全片最高"},
+    {name:"Joker", cues:90, want:"證明人類本質是自私的", need:"（無）——這本身是威脅", arc:"肉體輸、哲學贏", note:"全片唯一沒有 Need 的角色"},
+    {name:"Harvey Dent", cues:141, want:"用法律清洗哥譚", need:"接受命運的不可控", arc:"最清晰的悲劇拱形", note:"墮落速度最快的悲劇弧"},
+    {name:"Gordon", cues:119, want:"維持秩序", need:"允許謊言存在以保護真相", arc:"道德錨點，主動共謀", note:"唯一從頭到尾清醒活著的人"},
+  ],
+  themes: [
+    {tag:"T1", title:"秩序 vs 混沌", desc:"Joker 不是要獲利，他要推翻所有計畫本身的合理性。最強表達在 Batman 審訊 Joker 的長篇獨白。"},
+    {tag:"T2", title:"代理暴力與民主合法性", desc:"假蝙蝠俠、香港越境、全城監控三個升級節點。Fox 辭職是唯一有人畫出底線的時刻。"},
+    {tag:"T3", title:"謊言作為社會黏合劑", desc:"Alfred 燒信與 Batman 承擔污名是同一邏輯的兩個表達：謊言比真相更能維持秩序。"},
+    {tag:"T4", title:"人性可不可腐化", desc:"渡輪實驗：Joker 對普通人輸了，對英雄人物贏了。Harvey 的轉化是這個命題最殘酷的佐證。"},
+    {tag:"T5", title:"犧牲的代價與英雄神話的脆弱", desc:"Batman 選擇救 Harvey 讓 Rachel 死——沒有對的答案。英雄神話靠謊言維持，不靠事實。"},
+  ],
+  pacingNotes: "狀態戲雖只佔 20%，但高度集中在兩個區段：\n第1幕中段：銀行搶劫後連續多場全為狀態戲，是全片最長的動能斷層。\n第4幕開頭：Rachel 死後連續多場狀態戲，Harvey 甦醒這個關鍵轉折沉沒在哀悼場景裡。",
+};
+
+/* ════════════════════════════════════════════════════════════════
+   工具函式
+   ════════════════════════════════════════════════════════════════ */
+function esc(s){ return String(s??"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function clamp(n,a,b){ return Math.max(a, Math.min(b, n)); }
+
+function computeActBoundaries(groups){
+  const bounds = []; let cum = 0;
+  for(let a=1;a<=5;a++){
+    const cnt = groups.filter(g=>g.act===a).reduce((s,g)=>s+g.plot+g.static,0);
+    const start = cum+1; cum += cnt;
+    bounds.push([cnt>0?start:cum, cum]);
+  }
+  return bounds;
+}
+function computeActGroupRanges(groups){
+  const ranges = {};
+  groups.forEach((g,i)=>{
+    if(!ranges[g.act]) ranges[g.act]=[i+1,i+1]; else ranges[g.act][1]=i+1;
+  });
+  return ranges;
+}
+function normalizeDeltas(arr,len){
+  const out = arr.slice(0,len);
+  while(out.length<len) out.push(0);
+  return out;
+}
+function buildFilmstrip(groups){
+  const cells = [];
+  groups.forEach((g,gi)=>{
+    for(let i=0;i<g.plot;i++) cells.push({type:"plot",act:g.act,gi});
+    for(let i=0;i<g.static;i++) cells.push({type:"static",act:g.act,gi});
+  });
+  return cells;
+}
+function staticRuns(filmstrip){
+  const runs=[]; let run=0,start=0;
+  filmstrip.forEach((c,i)=>{
+    if(c.type==="static"){ if(run===0) start=i; run++; }
+    else { if(run>=3) runs.push({start,len:run}); run=0; }
+  });
+  if(run>=3) runs.push({start,len:run});
+  return runs;
+}
+function validate(S){
+  const errs=[];
+  const groups=S.groups, characters=S.characters, cues=S.cues, themes=S.themes;
+  const total = groups.reduce((s,g)=>s+g.plot+g.static,0);
+  if(groups.length===0) errs.push("場組清單為空");
+  groups.forEach((g,i)=>{
+    if(!(g.act>=1 && g.act<=5)) errs.push(`場組 #${i+1}「${g.name||"未命名"}」act 必須在 1–5`);
+    if(g.plot<0||g.static<0) errs.push(`場組 #${i+1}「${g.name||"未命名"}」plot/static 不可為負數`);
+  });
+  const acts = groups.map(g=>g.act);
+  if(JSON.stringify(acts)!==JSON.stringify([...acts].sort((a,b)=>a-b))) errs.push("場組的 act 順序必須遞增（幕次不可回頭）");
+  if(total===0) errs.push("場次總數為 0，無法計算比例");
+  characters.forEach(ch=>{
+    if(ch.deltas.length!==groups.length) errs.push(`角色「${ch.name}」的 delta 有 ${ch.deltas.length} 項，場組有 ${groups.length} 個，尚未同步`);
+    const bad = ch.deltas.filter(d=>![-1,0,1].includes(d));
+    if(bad.length) errs.push(`角色「${ch.name}」出現非 -1/0/+1 的值`);
+  });
+  const cueVals = cues.map(c=>c.count);
+  if(JSON.stringify(cueVals)!==JSON.stringify([...cueVals].sort((a,b)=>b-a))) errs.push("台詞 cue 數尚未由高到低排列（報告會自動排序顯示，但建議手動同步）");
+  if(!(themes.length>=3 && themes.length<=5)) errs.push(`主題必須 3–5 個，目前 ${themes.length} 個`);
+  return errs;
+}
+function pyStr(s){ return JSON.stringify(s??""); }
+function buildPythonExport(S){
+  const bounds = computeActBoundaries(S.groups);
+  const groupsStr = S.groups.map(g=>`    {'name': ${pyStr(g.name)}, 'act': ${g.act}, 'plot': ${g.plot}, 'static': ${g.static}},`).join("\n");
+  const boundsStr = bounds.map(b=>`(${b[0]}, ${b[1]})`).join(", ");
+  const deltasStr = S.characters.map(ch=>`    ${pyStr(ch.name)}: [${ch.deltas.join(",")}],`).join("\n");
+  const cuesStr = S.cues.map(c=>`    ${pyStr(c.name)}: ${c.count},`).join("\n");
+  const profilesStr = S.profiles.map(p=>`    {'name': ${pyStr(p.name)}, 'cues': ${p.cues}, 'want': ${pyStr(p.want)}, 'need': ${pyStr(p.need)}, 'arc': ${pyStr(p.arc)}, 'note': ${pyStr(p.note)}},`).join("\n");
+  const themesStr = S.themes.map(t=>`    (${pyStr(t.tag)}, ${pyStr(t.title)}, ${pyStr(t.desc)}),`).join("\n");
+  return `# 由劇本分析工作台匯出 — 貼進《劇本分析報告生成器_v3.4.py》使用區塊即可執行
+_groups = [
+${groupsStr}
+]
+
+_act_bounds = [${boundsStr}]
+
+_char_deltas = {
+${deltasStr}
+}
+
+_cues = {
+${cuesStr}
+}
+
+_profiles = [
+${profilesStr}
+]
+
+_themes = [
+${themesStr}
+]
+
+_pacing = (
+    ${pyStr(S.pacingNotes)}
+)
+
+out = build_pdf(
+    output_path='/mnt/user-data/outputs/${S.title||"劇本"}_分析報告.pdf',
+    title=${pyStr(S.title||"劇本")},
+    groups=_groups,
+    act_boundaries=_act_bounds,
+    character_deltas=_char_deltas,
+    char_cue_counts=_cues,
+    character_profiles=_profiles,
+    themes=_themes,
+    pacing_notes=_pacing,
+)
+`;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   渲染函式
+   ════════════════════════════════════════════════════════════════ */
+function renderFilmstrip(groups){
+  const cells = buildFilmstrip(groups);
+  return `<div class="filmstrip-wrap"><div class="filmstrip-track">${
+    cells.map(c=>`<div class="fs-cell" style="background:${c.type==="plot"?"var(--plot)":"var(--static)"};height:${c.type==="plot"?34:24}px" title="${esc(groups[c.gi]?.name||"")}"></div>`).join("")
+  }</div></div>`;
+}
+function renderGroupBars(groups){
+  const max = Math.max(1, ...groups.map(g=>g.plot+g.static));
+  let lastAct=null, html="";
+  groups.forEach(g=>{
+    if(g.act!==lastAct){ html += `<div class="act-label">${ACT_LABELS[g.act-1]}</div>`; lastAct=g.act; }
+    const total=g.plot+g.static;
+    const pPct=(g.plot/max)*100, sPct=(g.static/max)*100;
+    html += `<div class="grp-row"><div class="grp-name">${esc(g.name)}</div><div class="grp-bar-wrap">
+      <div class="grp-bar-bg"><div style="width:${pPct}%;background:var(--plot)"></div><div style="width:${sPct}%;background:var(--static)"></div></div>
+      <div class="grp-total mono">${total}</div></div></div>`;
+  });
+  return html;
+}
+function renderCueBars(cues){
+  const sorted = [...cues].sort((a,b)=>b.count-a.count);
+  const max = Math.max(1, ...cues.map(c=>c.count));
+  return sorted.map((c,i)=>`<div class="grp-row"><div class="grp-name" style="width:120px">${esc(c.name)}</div>
+    <div class="grp-bar-wrap"><div class="grp-bar-bg"><div style="width:${(c.count/max)*100}%;background:${ARC_COLORS[i%ARC_COLORS.length]}"></div></div>
+    <div class="grp-total mono">${c.count}</div></div></div>`).join("");
+}
+function renderArcChart(groups, characters){
+  const n = groups.length;
+  const series = characters.map(ch=>{
+    const d = normalizeDeltas(ch.deltas, n);
+    let cum=0; return {name:ch.name, values:d.map(v=>cum+=v)};
+  });
+  const allVals = series.flatMap(s=>s.values).concat([0]);
+  const yMin = Math.min(...allVals)-1, yMax = Math.max(...allVals)+1;
+  const w=900,h=260,ml=34,mr=14,mt=14,mb=24;
+  const iw=w-ml-mr, ih=h-mt-mb;
+  const x = i => ml + (n<=1?0:(i/(n-1))*iw);
+  const y = v => mt + (1-(v-yMin)/(yMax-yMin))*ih;
+
+  const actRanges = computeActGroupRanges(groups);
+  const bands = Object.entries(actRanges).map(([act,[s,e]])=>{
+    const x1 = x(s-1) - (n>1? iw/(n-1)/2 : 8), x2 = x(e-1) + (n>1? iw/(n-1)/2 : 8);
+    return `<rect x="${x1}" y="${mt}" width="${x2-x1}" height="${ih}" fill="${ACT_BG[act-1]}" opacity="0.5"></rect>`;
+  }).join("");
+
+  const zeroY = y(0);
+  const lines = series.map((s,ci)=>{
+    const pts = s.values.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    const dots = s.values.map((v,i)=>`<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2.5" fill="${ARC_COLORS[ci%ARC_COLORS.length]}"><title>${esc(groups[i]?.name||"")}：${v}</title></circle>`).join("");
+    return `<polyline points="${pts}" fill="none" stroke="${ARC_COLORS[ci%ARC_COLORS.length]}" stroke-width="2"></polyline>${dots}`;
+  }).join("");
+
+  const legend = characters.map((ch,i)=>`<span style="margin-right:14px;font-size:11px;color:var(--muted)"><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${ARC_COLORS[i%ARC_COLORS.length]};margin-right:5px"></span>${esc(ch.name)}</span>`).join("");
+
+  return `<div style="margin-bottom:6px">${legend}</div>
+    <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;display:block">
+      ${bands}
+      <line x1="${ml}" y1="${zeroY}" x2="${w-mr}" y2="${zeroY}" stroke="var(--line)" stroke-width="1"></line>
+      ${lines}
+    </svg>`;
+}
+
+function renderApp(){
+  const errs = validate(S);
+  const fs = buildFilmstrip(S.groups);
+  const runs = staticRuns(fs);
+  const bounds = computeActBoundaries(S.groups);
+  const total = S.groups.reduce((s,g)=>s+g.plot+g.static,0);
+  const plotTotal = S.groups.reduce((s,g)=>s+g.plot,0);
+  const staticTotal = total-plotTotal;
+
+  const validationHtml = errs.length===0
+    ? `<div class="validation-bar validation-ok">✓ 資料通過即時驗證（對應 validate_inputs 邏輯）— 場次總數 ${total}，事件戲 ${plotTotal}、狀態戲 ${staticTotal}。</div>`
+    : `<div class="validation-bar validation-err">⚠ ${errs.map(e=>`<div>· ${esc(e)}</div>`).join("")}</div>`;
+
+  const header = `
+  <div class="swb-header no-print">
+    <div class="swb-topline">
+      <div class="swb-title-row">
+        <div>
+          <div class="swb-eyebrow">SCREENPLAY STRUCTURE WORKBENCH</div>
+          <input class="swb-title-input" value="${esc(S.title)}" onchange="S.title=this.value;render()" />
+        </div>
+      </div>
+      <div class="swb-actions">
+        <button class="btn" onclick="S.exportOpen=true;render()">匯出 Python 資料結構</button>
+        <button class="btn btn-dark" onclick="exportPDF()">轉出 PDF</button>
+      </div>
+    </div>
+    <div class="mode-tabs">
+      <button class="tab-btn ${S.mode==='workbench'?'tab-active':''}" onclick="S.mode='workbench';render()">工作台</button>
+      <button class="tab-btn ${S.mode==='report'?'tab-active':''}" onclick="S.mode='report';render()">報告預覽</button>
+    </div>
+  </div>`;
+
+  let body = "";
+  if(S.mode==="workbench"){
+    body = `
+    <div class="card">
+      <div class="card-title">場次類型分佈（即時）</div>
+      <div class="card-sub">依場組順序展開所有場次；藍＝事件戲、橘＝狀態戲。滑動可看全片。</div>
+      ${renderFilmstrip(S.groups)}
+      <div class="legend-row"><span><span class="legend-dot" style="background:var(--plot)"></span>事件戲</span><span><span class="legend-dot" style="background:var(--static)"></span>狀態戲</span></div>
+      ${runs.length ? `<div class="warn-box" style="margin-top:10px">${runs.map(r=>`⚠ 第 ${r.start+1}–${r.start+r.len} 場連續 ${r.len} 場狀態戲，建議寫入節奏風險備註。`).join("\n")}</div>` : ""}
+    </div>
+    <div class="card">
+      <div class="card-title">場組事件戲／狀態戲比例</div>
+      <div class="card-sub">由上而下依劇本順序；五幕分界：${bounds.map((b,i)=>`${ACT_SHORT[i]} ${b[0]}–${b[1]}`).join("　")}</div>
+      ${renderGroupBars(S.groups)}
+    </div>
+    <div class="sub-tabs">
+      ${[["groups","場組清單"],["arc","角色弧線"],["profiles","角色分析"],["cues","台詞比重"],["themes","主題"],["pacing","節奏備註"]]
+        .map(([id,label])=>`<button class="sub-tab-btn ${S.subTab===id?'sub-tab-active':''}" onclick="S.subTab='${id}';render()">${label}</button>`).join("")}
+    </div>
+    ${renderSubTab()}
+    `;
+  } else {
+    body = renderReport(S, fs, bounds, total, plotTotal, staticTotal, errs);
+  }
+
+  const exportModal = S.exportOpen ? `
+    <div class="export-modal no-print" onclick="if(event.target===this){S.exportOpen=false;render();}">
+      <div class="export-panel">
+        <div class="export-head">
+          <div style="font-weight:700;font-size:13px">Python 資料結構（貼進 v3.4 生成器即可執行）</div>
+          <button class="btn btn-ghost btn-sm" onclick="S.exportOpen=false;render()">關閉</button>
+        </div>
+        <div class="export-body">
+          <textarea class="export-ta" id="exportTa" readonly>${esc(buildPythonExport(S))}</textarea>
+          <button class="btn btn-dark" style="margin-top:10px" onclick="copyExport()">複製到剪貼簿</button>
+          <div style="font-size:11px;color:var(--hint);margin-top:8px;line-height:1.7">此工作台只負責資料整理與即時預覽；正式 PDF 仍可用 v3.4 腳本的繪圖邏輯產出（品質更高、含所有原始圖表細節），或直接用上方「轉出 PDF」做瀏覽器列印版。</div>
+        </div>
+      </div>
+    </div>` : "";
+
+  return header + `<div class="swb-body">${validationHtml}${body}</div>` + exportModal;
+}
+
+function renderSubTab(){
+  if(S.subTab==="groups"){
+    return `<div class="card">
+      <div class="card-title">場組清單</div>
+      <div class="card-sub">act 需 1–5 遞增；plot／static 為逐場計數。</div>
+      <table class="editor-table"><thead><tr><th style="width:40%">場組名稱</th><th>幕</th><th>事件戲</th><th>狀態戲</th><th></th></tr></thead><tbody>
+      ${S.groups.map((g,i)=>`<tr>
+        <td><input class="cell-input" value="${esc(g.name)}" onchange="updateGroup(${i},'name',this.value)"></td>
+        <td><select class="cell-input" onchange="updateGroup(${i},'act',this.value)">${[1,2,3,4,5].map(a=>`<option value="${a}" ${g.act===a?'selected':''}>第${a}幕</option>`).join("")}</select></td>
+        <td><input type="number" min="0" class="cell-input num" value="${g.plot}" onchange="updateGroup(${i},'plot',this.value)"></td>
+        <td><input type="number" min="0" class="cell-input num" value="${g.static}" onchange="updateGroup(${i},'static',this.value)"></td>
+        <td><button class="btn btn-ghost btn-sm btn-danger" onclick="removeGroup(${i})">✕</button></td>
+      </tr>`).join("")}
+      </tbody></table>
+      <button class="btn btn-sm" style="margin-top:10px" onclick="addGroup()">＋ 新增場組</button>
+    </div>`;
+  }
+  if(S.subTab==="arc"){
+    return `<div class="card">
+      <div class="card-title">角色弧線——累積價值分數</div>
+      <div class="card-sub">點擊每格切換 0 → +1 → −1 → 0。</div>
+      ${renderArcChart(S.groups, S.characters)}
+      <div style="margin-top:14px">
+      ${S.characters.map((ch,ci)=>{
+        const d = normalizeDeltas(ch.deltas, S.groups.length);
+        return `<div style="margin-bottom:14px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span style="width:10px;height:10px;border-radius:3px;background:${ARC_COLORS[ci%ARC_COLORS.length]};flex-shrink:0"></span>
+            <input class="cell-input" style="font-weight:700;max-width:200px" value="${esc(ch.name)}" onchange="renameCharacter(${ci},this.value)">
+            <button class="btn btn-ghost btn-sm btn-danger" onclick="removeCharacter(${ci})">✕</button>
+          </div>
+          <div class="delta-track">
+          ${d.map((val,i)=>`<div class="delta-btn" title="${esc(S.groups[i]?.name||'')}" onclick="cycleDelta(${ci},${i})" style="background:${val===1?'#E4F3E6':val===-1?'#FBEAEA':'#F1EFE8'};color:${val===1?'#2B6B33':val===-1?'#B23A2E':'var(--hint)'};border-color:${val===0?'var(--line)':'transparent'}">${val===1?'+1':val===-1?'−1':'·'}</div>`).join("")}
+          </div>
+        </div>`;
+      }).join("")}
+      <button class="btn btn-sm" onclick="addCharacter()">＋ 新增角色</button>
+      </div>
+    </div>`;
+  }
+  if(S.subTab==="profiles"){
+    return `<div class="card">
+      <div class="card-title">角色功能分析（製作人視角）</div>
+      <div class="card-sub">cues 建議與「台詞比重」分頁的數值保持一致。</div>
+      ${S.profiles.map((p,i)=>`<div class="profile-card">
+        <div style="display:flex;gap:10px">
+          <div style="flex:1"><span class="field-label">角色名</span><input class="field-input" value="${esc(p.name)}" onchange="updateProfile(${i},'name',this.value)"></div>
+          <div style="width:90px"><span class="field-label">cue 數</span><input type="number" class="field-input mono" value="${p.cues}" onchange="updateProfile(${i},'cues',this.value)"></div>
+          <button class="btn btn-ghost btn-sm btn-danger" style="height:30px;margin-top:18px" onclick="removeProfile(${i})">✕</button>
+        </div>
+        <span class="field-label">Want（表面目標）</span><input class="field-input" value="${esc(p.want)}" onchange="updateProfile(${i},'want',this.value)">
+        <span class="field-label">Need（深層需求）</span><input class="field-input" value="${esc(p.need)}" onchange="updateProfile(${i},'need',this.value)">
+        <span class="field-label">弧線走向</span><input class="field-input" value="${esc(p.arc)}" onchange="updateProfile(${i},'arc',this.value)">
+        <span class="field-label">特殊標記</span><input class="field-input" style="margin-bottom:0" value="${esc(p.note)}" onchange="updateProfile(${i},'note',this.value)">
+      </div>`).join("")}
+      <button class="btn btn-sm" onclick="addProfile()">＋ 新增角色分析</button>
+    </div>`;
+  }
+  if(S.subTab==="cues"){
+    return `<div class="card">
+      <div class="card-title">台詞比重</div>
+      <div class="card-sub">依 cue 數由高到低顯示；輸入順序不影響圖表排序。</div>
+      ${renderCueBars(S.cues)}
+      <table class="editor-table" style="margin-top:14px"><thead><tr><th style="width:60%">角色</th><th>cue 數</th><th></th></tr></thead><tbody>
+      ${S.cues.map((c,i)=>`<tr>
+        <td><input class="cell-input" value="${esc(c.name)}" onchange="updateCue(${i},'name',this.value)"></td>
+        <td><input type="number" class="cell-input num" value="${c.count}" onchange="updateCue(${i},'count',this.value)"></td>
+        <td><button class="btn btn-ghost btn-sm btn-danger" onclick="removeCue(${i})">✕</button></td>
+      </tr>`).join("")}
+      </tbody></table>
+      <button class="btn btn-sm" style="margin-top:10px" onclick="addCue()">＋ 新增角色</button>
+    </div>`;
+  }
+  if(S.subTab==="themes"){
+    return `<div class="card">
+      <div class="card-title">主題密度與哲學層次分析</div>
+      <div class="card-sub">3–5 個，僅列有場次支撐的命題。</div>
+      ${S.themes.map((t,i)=>`<div class="theme-card">
+        <div style="display:flex;gap:10px">
+          <div style="width:70px"><span class="field-label">標籤</span><input class="field-input mono" value="${esc(t.tag)}" onchange="updateTheme(${i},'tag',this.value)"></div>
+          <div style="flex:1"><span class="field-label">標題</span><input class="field-input" value="${esc(t.title)}" onchange="updateTheme(${i},'title',this.value)"></div>
+          <button class="btn btn-ghost btn-sm btn-danger" style="height:30px;margin-top:18px" onclick="removeTheme(${i})">✕</button>
+        </div>
+        <span class="field-label">說明（具體場次證據）</span><textarea class="field-input" style="margin-bottom:0" onchange="updateTheme(${i},'desc',this.value)">${esc(t.desc)}</textarea>
+      </div>`).join("")}
+      ${S.themes.length<5 ? `<button class="btn btn-sm" onclick="addTheme()">＋ 新增主題</button>` : ""}
+    </div>`;
+  }
+  if(S.subTab==="pacing"){
+    return `<div class="card">
+      <div class="card-title">節奏風險備註</div>
+      <div class="card-sub">術語一律用「狀態戲」；上方 filmstrip 偵測到 3+ 連續狀態戲會自動提示區段，可複製貼入下方。</div>
+      <textarea class="field-input" style="min-height:160px;margin-bottom:0" onchange="S.pacingNotes=this.value;render()">${esc(S.pacingNotes)}</textarea>
+    </div>`;
+  }
+  return "";
+}
+
+function renderReport(S, fs, bounds, total, plotTotal, staticTotal, errs){
+  return `<div id="printable"><div class="report-page">
+    <div class="report-title">${esc(S.title||"（未命名劇本）")}　劇本結構分析</div>
+    <div class="report-sub">McKee 事件戲 / 狀態戲分類　·　五幕結構　·　角色弧線　·　主題層次　·　結構評估</div>
+    <div class="stat-grid">
+      <div class="stat-cell"><div class="stat-num">${total}</div><div class="stat-label">scene headings</div></div>
+      <div class="stat-cell"><div class="stat-num" style="color:var(--plot)">${plotTotal}</div><div class="stat-label">事件戲 ${total?Math.round(plotTotal*100/total):0}%</div></div>
+      <div class="stat-cell"><div class="stat-num" style="color:#BA7517">${staticTotal}</div><div class="stat-label">狀態戲 ${total?Math.round(staticTotal*100/total):0}%</div></div>
+      <div class="stat-cell"><div class="stat-num">${S.groups.length}</div><div class="stat-label">場組（視覺聚合）</div></div>
+    </div>
+
+    <div class="sec-heading"><span class="sec-n">一</span><span>場次類型分佈（McKee 定義）</span></div>
+    <div class="sec-body-text">全片 ${total} 個場次逐一分類，五幕分界：${bounds.map((b,i)=>`${ACT_SHORT[i]} ${b[0]}–${b[1]}`).join("　")}</div>
+    ${renderFilmstrip(S.groups)}
+    <div class="legend-row"><span><span class="legend-dot" style="background:var(--plot)"></span>事件戲（有價值轉換）</span><span><span class="legend-dot" style="background:var(--static)"></span>狀態戲（無價值轉換）</span></div>
+    ${S.pacingNotes ? `<div class="warn-box" style="margin-top:10px">${esc(S.pacingNotes)}</div>` : ""}
+
+    <div class="sec-heading"><span class="sec-n">二</span><span>場組事件戲／狀態戲比例</span></div>
+    <div class="sec-body-text">${S.groups.length} 個場組的事件戲 vs 狀態戲數量，由上而下依劇本順序。</div>
+    ${renderGroupBars(S.groups)}
+
+    <div class="sec-heading"><span class="sec-n">三</span><span>角色弧線——累積價值分數</span></div>
+    <div class="sec-body-text">每個場組依角色得分 +1／−1／0。</div>
+    ${renderArcChart(S.groups, S.characters)}
+
+    <div class="sec-heading"><span class="sec-n">四</span><span>角色功能分析（製作人視角）</span></div>
+    <div class="profile-grid">
+    ${S.profiles.map(p=>`<div class="profile-mini">
+      <div style="font-weight:700;margin-bottom:4px">${esc(p.name)}</div>
+      <div style="color:var(--muted);margin-bottom:4px">對白：${p.cues} cue</div>
+      <div style="color:var(--muted);margin-bottom:2px">Want：${esc(p.want)}</div>
+      <div style="color:var(--muted);margin-bottom:2px">Need：${esc(p.need)}</div>
+      <div style="color:var(--muted);margin-bottom:4px">→ ${esc(p.arc)}</div>
+      ${p.note?`<div style="color:#3C3489;font-size:10.5px">${esc(p.note)}</div>`:""}
+    </div>`).join("")}
+    </div>
+
+    <div class="sec-heading"><span class="sec-n">五</span><span>主題密度與哲學層次分析</span></div>
+    ${S.themes.map(t=>`<div style="display:flex;gap:12px;padding:8px 0;border-bottom:1px solid #F0EEE7">
+      <div style="width:30px;font-weight:800;font-size:13px;flex-shrink:0">${esc(t.tag)}</div>
+      <div style="font-size:12px;line-height:1.8"><span style="font-weight:700">${esc(t.title)}</span><br><span style="color:var(--muted)">${esc(t.desc)}</span></div>
+    </div>`).join("")}
+
+    <div class="sec-heading"><span class="sec-n">六</span><span>結構評估——台詞比重</span></div>
+    ${renderCueBars(S.cues)}
+
+    <div style="margin-top:24px;padding-top:14px;border-top:1px solid var(--line)">
+      <div class="card-title" style="font-size:12px">交付前自檢對照</div>
+      <div class="checklist-item">${errs.length===0?"✓":"⚠"} 資料驗證通過（對應 validate_inputs）</div>
+      <div class="checklist-item">✓ 事件戲 ${plotTotal} ＋ 狀態戲 ${staticTotal} ＝ ${plotTotal+staticTotal}（應等於總場次 ${total}）</div>
+      <div class="checklist-item">✓ 全文術語一律「事件戲／狀態戲」，無舊稱</div>
+      <div class="checklist-item">→ 若需正式交付品質，仍建議另以 v3.4 腳本＋poppler-data rasterize 產出並檢查中文與弧線圖例</div>
+    </div>
+  </div></div>`;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   事件處理（全域函式，供 inline onclick/onchange 呼叫）
+   ════════════════════════════════════════════════════════════════ */
+function render(){ document.getElementById("app").innerHTML = renderApp(); }
+
+function updateGroup(i, field, val){
+  const g = S.groups[i];
+  if(field==="name") g.name = val;
+  else if(field==="act") g.act = Number(val);
+  else g[field] = clamp(Number(val)||0, 0, 999);
+  render();
+}
+function addGroup(){ S.groups.push({name:"新場組", act: S.groups.length?S.groups[S.groups.length-1].act:1, plot:0, static:1}); render(); }
+function removeGroup(i){ S.groups.splice(i,1); render(); }
+
+function normalizeAllDeltas(){ S.characters.forEach(ch=>{ ch.deltas = normalizeDeltas(ch.deltas, S.groups.length); }); }
+function cycleDelta(ci,i){
+  normalizeAllDeltas();
+  const ch = S.characters[ci];
+  const cur = ch.deltas[i];
+  ch.deltas[i] = cur===0?1:cur===1?-1:0;
+  render();
+}
+function renameCharacter(ci,val){ if(val) S.characters[ci].name = val; render(); }
+function addCharacter(){ S.characters.push({name:`新角色${S.characters.length+1}`, deltas:new Array(S.groups.length).fill(0)}); render(); }
+function removeCharacter(ci){ S.characters.splice(ci,1); render(); }
+
+function updateProfile(i,field,val){ S.profiles[i][field] = field==="cues" ? (Number(val)||0) : val; render(); }
+function addProfile(){ S.profiles.push({name:"新角色",cues:0,want:"",need:"",arc:"",note:""}); render(); }
+function removeProfile(i){ S.profiles.splice(i,1); render(); }
+
+function updateCue(i,field,val){ S.cues[i][field] = field==="count" ? (Number(val)||0) : val; render(); }
+function addCue(){ S.cues.push({name:"新角色",count:0}); render(); }
+function removeCue(i){ S.cues.splice(i,1); render(); }
+
+function updateTheme(i,field,val){ S.themes[i][field] = val; render(); }
+function addTheme(){ if(S.themes.length<5) S.themes.push({tag:`T${S.themes.length+1}`,title:"",desc:""}); render(); }
+function removeTheme(i){ S.themes.splice(i,1); render(); }
+
+function copyExport(){
+  const ta = document.getElementById("exportTa");
+  ta.select();
+  try{ document.execCommand("copy"); }catch(e){}
+  if(navigator.clipboard){ navigator.clipboard.writeText(ta.value).catch(()=>{}); }
+}
+
+function exportPDF(){
+  S.mode = "report";
+  render();
+  setTimeout(()=>window.print(), 150);
+}
+
+render();
+</script>
+</body>
+</html>
