@@ -1,4 +1,4 @@
-# 劇本結構分析工作台
+# Script Lens
 
 McKee 事件戲／狀態戲分類的互動工作台。純前端單一 HTML 檔案，不需安裝、不需伺服器，開啟 `index.html` 即可使用；部署到 GitHub Pages 後即為雲端網址，手機也能開。
 
