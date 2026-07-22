@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>劇本結構分析工作台</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   :root{
     --plot:#185FA5; --static:#EF9F27; --text:#221f1a; --muted:#5F5E5A; --hint:#8b897f;
@@ -134,6 +135,13 @@ let S = {
   mode: "workbench",
   subTab: "groups",
   exportOpen: false,
+  importOpen: false,
+  importText: "",
+  importPatternKey: "auto",
+  importPreview: null,
+  importDetectCues: true,
+  importBusy: false,
+  importMsg: "",
   groups: [
     {name:"銀行搶劫/Joker登場",act:1,plot:19,static:0},
     {name:"Gordon調查/威脅建立",act:1,plot:2,static:2},
@@ -270,6 +278,77 @@ function validate(S){
   if(!(themes.length>=3 && themes.length<=5)) errs.push(`主題必須 3–5 個，目前 ${themes.length} 個`);
   return errs;
 }
+const SCENE_PATTERNS = {
+  auto: /^\s*(INT|EXT|INT\.?\/EXT|I\/E)[.\s]|^\s*(內景|外景|內\/外景|場景)[\s、:：]?|^\s*第?\s*\d{1,4}\s*[場场景](?!\S)|^\s*SCENE\s*\d+|^\s*S\d{1,4}\b/i,
+  en: /^\s*(INT|EXT|INT\.?\/EXT|I\/E)[.\s]/i,
+  zh: /^\s*(內景|外景|內\/外景|場景)[\s、:：]?/,
+  numbered: /^\s*(第?\s*\d{1,4}\s*[場场景](?!\S)|SCENE\s*\d+|S\d{1,4}\b)/i,
+};
+const SCENE_PATTERN_LABELS = {
+  auto: "自動（英式＋中式＋編號，建議先用這個）",
+  en: "英式劇本（INT./EXT.）",
+  zh: "中式劇本（內景／外景／場景）",
+  numbered: "編號式（第1場／SCENE 1／S01）",
+};
+
+function detectSceneLines(text, patternKey){
+  const re = SCENE_PATTERNS[patternKey] || SCENE_PATTERNS.auto;
+  const rawLines = text.split(/\r?\n/);
+  const matches = [];
+  rawLines.forEach((line, idx) => {
+    const t = line.trim();
+    if(t.length===0) return;
+    if(re.test(t)) matches.push({idx, text: t});
+  });
+  return matches;
+}
+
+// 粗略角色台詞頻率偵測（實驗性，務必人工核對）：
+// 抓「短行＋冒號」或「短行全大寫」樣式，排除同時符合場景標題樣式的行
+function detectCueFrequency(text, sceneRe, topN){
+  const rawLines = text.split(/\r?\n/);
+  const counts = {};
+  const nameLineRe = /^([A-Za-z\u4e00-\u9fa5][A-Za-z\u4e00-\u9fa5 .]{0,9})[:：]\s*\S/;
+  const capsRe = /^[A-Z][A-Z .]{1,14}$/;
+  rawLines.forEach(line=>{
+    const t = line.trim();
+    if(!t || t.length>18) return;
+    if(sceneRe.test(t)) return;
+    let name = null;
+    const m = t.match(nameLineRe);
+    if(m) name = m[1].trim();
+    else if(capsRe.test(t)) name = t.trim();
+    if(!name || name.length<2) return;
+    counts[name] = (counts[name]||0)+1;
+  });
+  return Object.entries(counts)
+    .map(([name,count])=>({name,count}))
+    .sort((a,b)=>b.count-a.count)
+    .slice(0, topN||15);
+}
+
+async function extractPdfText(arrayBuffer){
+  const pdf = await pdfjsLib.getDocument({data:arrayBuffer}).promise;
+  const lines = [];
+  for(let p=1;p<=pdf.numPages;p++){
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    let lastY=null, line=[];
+    content.items.forEach(item=>{
+      const y = Math.round(item.transform[5]);
+      if(lastY!==null && Math.abs(y-lastY)>2){
+        lines.push(line.join(""));
+        line=[];
+      }
+      line.push(item.str);
+      lastY=y;
+    });
+    if(line.length) lines.push(line.join(""));
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
 function pyStr(s){ return JSON.stringify(s??""); }
 function buildPythonExport(S){
   const bounds = computeActBoundaries(S.groups);
@@ -408,6 +487,7 @@ function renderApp(){
         </div>
       </div>
       <div class="swb-actions">
+        <button class="btn" onclick="S.importOpen=true;render()">匯入劇本</button>
         <button class="btn" onclick="S.exportOpen=true;render()">匯出 Python 資料結構</button>
         <button class="btn btn-dark" onclick="exportPDF()">轉出 PDF</button>
       </div>
@@ -458,7 +538,74 @@ function renderApp(){
       </div>
     </div>` : "";
 
-  return header + `<div class="swb-body">${validationHtml}${body}</div>` + exportModal;
+  const importModal = S.importOpen ? renderImportModal() : "";
+
+  return header + `<div class="swb-body">${validationHtml}${body}</div>` + exportModal + importModal;
+}
+
+function renderImportModal(){
+  const patternOptions = Object.entries(SCENE_PATTERN_LABELS)
+    .map(([k,label])=>`<option value="${k}" ${S.importPatternKey===k?"selected":""}>${esc(label)}</option>`).join("");
+
+  let previewHtml = "";
+  if(S.importPreview){
+    const { matches } = S.importPreview;
+    previewHtml = `
+      <div style="font-size:12px;color:var(--muted);margin:10px 0 6px">
+        偵測到 <b>${matches.length}</b> 個場景標題。前 10 筆樣本，先確認格式抓得對不對：
+      </div>
+      <div style="border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:11.5px;line-height:1.9;background:#FBFAF7;max-height:160px;overflow:auto">
+        ${matches.slice(0,10).map(m=>`<div>${m.idx+1}. ${esc(m.text)}</div>`).join("") || '<div style="color:var(--hint)">沒有抓到任何符合的行，換個格式試試。</div>'}
+      </div>
+      ${matches.length>300 ? `<div class="warn-box" style="margin-top:8px">⚠ 場次超過 300 場，依你的前置檢查原則建議分批處理，一次匯入的量會偏大。</div>` : ""}
+    `;
+  }
+
+  return `
+    <div class="export-modal no-print" onclick="if(event.target===this){S.importOpen=false;render();}">
+      <div class="export-panel">
+        <div class="export-head">
+          <div style="font-weight:700;font-size:13px">匯入劇本 → 自動切分場景</div>
+          <button class="btn btn-ghost btn-sm" onclick="S.importOpen=false;render()">關閉</button>
+        </div>
+        <div class="export-body">
+          <div class="warn-box" style="margin-bottom:14px">
+            這一步只做機械式場景切分＋粗略台詞計數，全部免費、在你瀏覽器裡跑，不呼叫任何付費 API。
+            事件戲／狀態戲分類、五幕分界、角色 Want/Need、主題分析仍需要判斷力，無法用規則引擎取代——
+            這正是這套工具存在的理由。匯入後所有場組會先預設為「狀態戲」（依你的原則：寫不出判定式的一律歸狀態戲），
+            請逐一確認並改判為事件戲。
+          </div>
+
+          <span class="field-label">上傳檔案（.txt 或 .pdf，皆在本機瀏覽器處理）</span>
+          <input type="file" accept=".txt,.pdf" onchange="onImportFileSelected(event)" style="margin-bottom:10px" />
+          <span class="field-label">或直接貼上劇本文字</span>
+          <textarea class="field-input mono" style="min-height:120px" placeholder="貼上劇本純文字…" oninput="S.importText=this.value" onchange="S.importText=this.value">${esc(S.importText)}</textarea>
+
+          <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:6px">
+            <div style="flex:1">
+              <span class="field-label">場景標題格式</span>
+              <select class="field-input" style="margin-bottom:0" onchange="S.importPatternKey=this.value">${patternOptions}</select>
+            </div>
+            <button class="btn" onclick="runImportDetection()">${S.importBusy ? "處理中…" : "偵測場景"}</button>
+          </div>
+          <label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:6px;margin:6px 0 10px">
+            <input type="checkbox" ${S.importDetectCues?"checked":""} onchange="S.importDetectCues=this.checked">
+            同時嘗試偵測角色台詞比重（實驗性，務必人工核對，不準時直接在「台詞比重」分頁手動改）
+          </label>
+
+          ${S.importMsg ? `<div class="warn-box" style="margin-bottom:10px">${esc(S.importMsg)}</div>` : ""}
+          ${previewHtml}
+
+          ${S.importPreview && S.importPreview.matches.length>0 ? `
+            <div style="display:flex;gap:8px;margin-top:14px">
+              <button class="btn btn-dark" onclick="confirmImport('replace')">取代目前場組清單</button>
+              <button class="btn" onclick="confirmImport('append')">加到清單最後</button>
+            </div>
+            <div style="font-size:11px;color:var(--hint);margin-top:8px">格式抓得不準？換上面的下拉選單重新偵測一次即可，尚未按「取代／加到清單」前不會動到現有資料。</div>
+          ` : ""}
+        </div>
+      </div>
+    </div>`;
 }
 
 function renderSubTab(){
@@ -665,6 +812,76 @@ function exportPDF(){
   S.mode = "report";
   render();
   setTimeout(()=>window.print(), 150);
+}
+
+async function onImportFileSelected(evt){
+  const file = evt.target.files[0];
+  if(!file) return;
+  S.importBusy = true; S.importMsg = `讀取中：${file.name} …`; render();
+  try{
+    if(/\.pdf$/i.test(file.name)){
+      const buf = await file.arrayBuffer();
+      const text = await extractPdfText(buf);
+      S.importText = text;
+      S.importMsg = `已從 PDF 擷取文字（${file.name}），可以按「偵測場景」了。若排版跑掉，改用貼上文字方式較穩。`;
+    } else {
+      const text = await file.text();
+      S.importText = text;
+      S.importMsg = `已讀取 ${file.name}，可以按「偵測場景」了。`;
+    }
+  } catch(err){
+    S.importMsg = `讀取失敗：${err.message || err}。可以改用「貼上劇本文字」的方式。`;
+  }
+  S.importBusy = false;
+  render();
+}
+
+function runImportDetection(){
+  if(!S.importText || !S.importText.trim()){
+    S.importMsg = "還沒有文字可以偵測，先上傳檔案或貼上文字。";
+    S.importPreview = null;
+    render();
+    return;
+  }
+  const re = SCENE_PATTERNS[S.importPatternKey] || SCENE_PATTERNS.auto;
+  const matches = detectSceneLines(S.importText, S.importPatternKey);
+  S.importPreview = { matches };
+  S._importCueRe = re;
+  S.importMsg = "";
+  render();
+}
+
+function confirmImport(mode){
+  if(!S.importPreview || S.importPreview.matches.length===0) return;
+  const newGroups = S.importPreview.matches.map(m => ({
+    name: m.text.length>24 ? m.text.slice(0,24)+"…" : m.text,
+    act: 1,
+    plot: 0,
+    static: 1,
+  }));
+  S.groups = (mode==="append") ? S.groups.concat(newGroups) : newGroups;
+  normalizeAllDeltas();
+
+  if(S.importDetectCues){
+    const re = S._importCueRe || SCENE_PATTERNS[S.importPatternKey] || SCENE_PATTERNS.auto;
+    const cueGuess = detectCueFrequency(S.importText, re, 15);
+    if(cueGuess.length){
+      if(mode==="append"){
+        cueGuess.forEach(c=>{
+          const existing = S.cues.find(x=>x.name===c.name);
+          if(existing) existing.count += c.count; else S.cues.push(c);
+        });
+      } else {
+        S.cues = cueGuess;
+      }
+    }
+  }
+
+  S.importOpen = false;
+  S.importPreview = null;
+  S.mode = "workbench";
+  S.subTab = "groups";
+  render();
 }
 
 render();
