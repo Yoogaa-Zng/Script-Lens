@@ -136,6 +136,9 @@ let S = {
   subTab: "groups",
   exportOpen: false,
   importOpen: false,
+  jsonImportOpen: false,
+  jsonImportText: "",
+  jsonImportMsg: "",
   importText: "",
   importPatternKey: "auto",
   importPreview: null,
@@ -487,7 +490,8 @@ function renderApp(){
         </div>
       </div>
       <div class="swb-actions">
-        <button class="btn" onclick="S.importOpen=true;render()">匯入劇本</button>
+        <button class="btn" onclick="S.importOpen=true;render()">匯入劇本（場景切分）</button>
+        <button class="btn" onclick="S.jsonImportOpen=true;render()">貼上分析資料（JSON）</button>
         <button class="btn" onclick="S.exportOpen=true;render()">匯出 Python 資料結構</button>
         <button class="btn btn-dark" onclick="exportPDF()">轉出 PDF</button>
       </div>
@@ -539,8 +543,54 @@ function renderApp(){
     </div>` : "";
 
   const importModal = S.importOpen ? renderImportModal() : "";
+  const jsonImportModal = S.jsonImportOpen ? renderJsonImportModal() : "";
 
-  return header + `<div class="swb-body">${validationHtml}${body}</div>` + exportModal + importModal;
+  return header + `<div class="swb-body">${validationHtml}${body}</div>` + exportModal + importModal + jsonImportModal;
+}
+
+function jsonSchemaExample(){
+  return JSON.stringify({
+    title: "劇本名稱",
+    groups: [{name:"場組名稱", act:1, plot:0, static:1}],
+    characters: [{name:"角色名", deltas:[1,0,-1]}],
+    cues: [{name:"角色名", count:120}],
+    profiles: [{name:"角色名", cues:120, want:"表面目標", need:"深層需求", arc:"弧線走向", note:"特殊標記"}],
+    themes: [{tag:"T1", title:"主題標題", desc:"說明（具體場次證據）"}],
+    pacingNotes: "節奏風險說明文字",
+  }, null, 2);
+}
+
+function claudePromptText(){
+  return "分析完成後，請額外輸出一段 JSON（不要用 python 字面量），格式如下，欄位名稱與結構要完全一致，" +
+    "characters 陣列裡每個角色的 deltas 長度要等於 groups 的數量：\n\n" + jsonSchemaExample();
+}
+
+function renderJsonImportModal(){
+  return `
+    <div class="export-modal no-print" onclick="if(event.target===this){S.jsonImportOpen=false;render();}">
+      <div class="export-panel">
+        <div class="export-head">
+          <div style="font-weight:700;font-size:13px">貼上 Claude 分析結果（JSON）→ 一次帶入全部資料</div>
+          <button class="btn btn-ghost btn-sm" onclick="S.jsonImportOpen=false;render()">關閉</button>
+        </div>
+        <div class="export-body">
+          <div class="warn-box" style="margin-bottom:12px">
+            場組分類、角色 Want/Need、主題分析這些需要判斷力的部分，還是要先請 Claude 分析完再貼過來——
+            這步驟省不掉。這個功能省的是「貼過來之後」逐格手動輸入的力氣。
+          </div>
+          <span class="field-label">第一次用？先把這段丟給 Claude，請它照這個格式輸出</span>
+          <div style="display:flex;gap:8px;margin-bottom:10px">
+            <button class="btn btn-sm" onclick="copyClaudePrompt()">複製「給 Claude 的指令」</button>
+          </div>
+          <span class="field-label">貼上 Claude 輸出的 JSON</span>
+          <textarea class="field-input mono" id="jsonImportTa" style="min-height:220px" placeholder='${esc(jsonSchemaExample())}' oninput="S.jsonImportText=this.value"></textarea>
+          ${S.jsonImportMsg ? `<div class="warn-box" style="margin-top:4px">${esc(S.jsonImportMsg)}</div>` : ""}
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button class="btn btn-dark" onclick="confirmJsonImport()">匯入並取代目前資料</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
 }
 
 function renderImportModal(){
@@ -812,6 +862,77 @@ function exportPDF(){
   S.mode = "report";
   render();
   setTimeout(()=>window.print(), 150);
+}
+
+function copyClaudePrompt(){
+  const text = claudePromptText();
+  const ta = document.createElement("textarea");
+  ta.value = text; ta.style.position="fixed"; ta.style.opacity="0";
+  document.body.appendChild(ta); ta.select();
+  try{ document.execCommand("copy"); }catch(e){}
+  if(navigator.clipboard){ navigator.clipboard.writeText(text).catch(()=>{}); }
+  document.body.removeChild(ta);
+  S.jsonImportMsg = "已複製，貼到跟 Claude 的對話裡即可。";
+  render();
+}
+
+function confirmJsonImport(){
+  const raw = S.jsonImportText;
+  if(!raw || !raw.trim()){
+    S.jsonImportMsg = "還沒貼東西進來。";
+    render();
+    return;
+  }
+  let data;
+  try{
+    data = JSON.parse(raw);
+  } catch(err){
+    S.jsonImportMsg = `JSON 格式錯誤，無法解析：${err.message}。檢查一下是不是複製到了多餘的文字（例如 Claude 回覆裡的說明文字，只留 JSON 本體）。`;
+    render();
+    return;
+  }
+
+  const required = ["groups","characters","cues","profiles","themes"];
+  const missing = required.filter(k => !(k in data));
+  if(missing.length){
+    S.jsonImportMsg = `JSON 缺少必要欄位：${missing.join("、")}。`;
+    render();
+    return;
+  }
+  if(!Array.isArray(data.groups) || !Array.isArray(data.characters) || !Array.isArray(data.cues) ||
+     !Array.isArray(data.profiles) || !Array.isArray(data.themes)){
+    S.jsonImportMsg = "groups / characters / cues / profiles / themes 必須都是陣列。";
+    render();
+    return;
+  }
+
+  if(data.title) S.title = String(data.title);
+  S.groups = data.groups.map(g => ({
+    name: String(g.name||"未命名"),
+    act: clamp(Number(g.act)||1,1,5),
+    plot: clamp(Number(g.plot)||0,0,999),
+    static: clamp(Number(g.static)||0,0,999),
+  }));
+  S.characters = data.characters.map(c => ({
+    name: String(c.name||"未命名"),
+    deltas: normalizeDeltas((Array.isArray(c.deltas)?c.deltas:[]).map(d=>{
+      const n = Number(d); return n>0?1:n<0?-1:0;
+    }), S.groups.length),
+  }));
+  S.cues = data.cues.map(c => ({ name: String(c.name||"未命名"), count: Number(c.count)||0 }));
+  S.profiles = data.profiles.map(p => ({
+    name: String(p.name||"未命名"), cues: Number(p.cues)||0,
+    want: String(p.want||""), need: String(p.need||""), arc: String(p.arc||""), note: String(p.note||""),
+  }));
+  S.themes = data.themes.map(t => ({ tag: String(t.tag||""), title: String(t.title||""), desc: String(t.desc||"") }));
+  if(typeof data.pacingNotes === "string") S.pacingNotes = data.pacingNotes;
+
+  S.jsonImportOpen = false;
+  S.jsonImportText = "";
+  S.jsonImportMsg = "";
+  S.mode = "workbench";
+  S.subTab = "groups";
+  render();
 }
 
 async function onImportFileSelected(evt){
